@@ -55,11 +55,11 @@ is_server_live()
 
 is_pid_exist()
 {
-    count=$(ps | grep $1 | wc -l)
-    if [ $count -gt 1 ]; then
-       return 0
+    if [ "$(cat /proc/$1/comm 2>/dev/null)" == "$2" ]; then
+        return 0
+    else
+        return 1
     fi
-    return 1
 }
 
 pid_store()
