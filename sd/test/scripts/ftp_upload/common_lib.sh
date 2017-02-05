@@ -88,7 +88,7 @@ pid_clear()
 
 log()
 {
-    echo $3 "$(date +'%Y-%m-%dT%H:%M:%S%z') $1" >> $2
+    echo $3 "$(date +'%b %d %H:%M:%S %z') $1" >> $2
 }
 
 unreach_get()
