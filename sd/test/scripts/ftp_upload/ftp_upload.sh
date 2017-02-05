@@ -7,18 +7,19 @@ FTP_MEM_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp_upload.mem"
 FTP_LOG="/tmp/hd1/test/scripts/ftp_upload/log.txt"
 PID_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp.pid"
 
-FTP_ADD=$(get_config FTP_HOST $FTP_CFG)
 FTP_CFG="/tmp/hd1/test/scripts/ftp_upload/ftp_upload.cfg"
+FTP_ADD=$(get_config FTP_HOST $FTP_CFG)
 
 mem_store()
 {
-    echo "${2}D${3}F${4}P${5}T${6}R" > $1
+    echo "${2}A${3}F${4}P${5}T${6}R" > $1
 }
 
 mem_retry_next()
 {
     tmp_data=$(cat "$1")
-    tmp_data="${tmp_data}trueR"
+    tmp_data=${tmp_data%%T*}
+    tmp_data="${tmp_data}TtrueR"
     echo "$tmp_data" > $1
 }
 
@@ -27,8 +28,8 @@ mem_get()
     mfile=$1
     data=$(cat "$mfile")
     
-    last_folder=${data%%D*}
-    data=${data##*D}
+    last_folder=${data%%A*}
+    data=${data##*A}
     
     last_file=${data%%F*}
     data=${data##*F}
@@ -43,7 +44,7 @@ mem_get()
     
     if [ -z "${last_folder}" ] || [ -z "${last_file}" ]; then
         log "[$NAME] Cannot find last folder and file in $mfile" ${FTP_LOG}
-        log "[$NAME] The file should content as: 2016Y08M01D13HD23M00S.mp4FPTR" ${FTP_LOG}
+        log "[$NAME] The file should content as: 2016Y08M01D13HA23M00S.mp4FPTR" ${FTP_LOG}
         exit 0
     fi
 }
