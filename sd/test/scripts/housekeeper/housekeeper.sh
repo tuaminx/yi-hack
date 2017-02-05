@@ -8,22 +8,28 @@ PID_FILE="/tmp/hd1/test/scripts/housekeeper/housekeeper.pid"
 UNREACH_FILE="/tmp/hd1/test/scripts/housekeeper/unreach_count.mem"
 LAST_CLEANDAY_FILE="/tmp/hd1/test/scripts/housekeeper/last_record_cleanup.mem"
 
+HK_CFG="/tmp/hd1/test/scripts/housekeeper/housekeeper.cfg"
+
 check_gw_to_alert()
 {
-    retry_time=$(get_config RETRY_TO_ALERT)
+    retry_time=$(get_config RETRY_TO_ALERT $HK_CFG)
     ur_count=$(unreach_get $UNREACH_FILE)
     if [ $ur_count -eq $retry_time ]; then
-        log "[$NAME] Reach retry $retry_time time reboot $retry_time. Reset and reboot." $HK_LOG
+        log "[$NAME] Reach retry $retry_time time reboot $retry_time. Alert." $HK_LOG
         unreach_reset $UNREACH_FILE
         led -boff -yfast
-        return 1
+        if [ "$(get_config REBOOT_WHEN_ALERT $HK_CFG)" == "yes" ]; then
+            log "[$NAME] REBOOT" $HK_LOG
+            reboot -f
+        fi
+        return 0
     fi
 
     is_server_live $(get_config GATEWAY)
     if [ $? -ne 0 ]; then
         log "[$NAME] Unreach gateway, increase unreach count" $HK_LOG
         unreach_increase $UNREACH_FILE
-        return 1
+        return 0
     fi
 
     # Pass unreach gateway check, so reset it
@@ -45,7 +51,7 @@ cleanup_record()
     fi
     echo $today > $LAST_CLEANDAY_FILE
 	
-    number_keep_day=$(get_config RECORD_KEEP_DAYS)
+    number_keep_day=$(get_config RECORD_KEEP_DAYS $HK_CFG)
     keep_date=$(date -D %s -d $(( $(date +%s) - ((86400 * $number_keep_day)) )) \
                +'%Y%m%d')
     log "[$NAME] Keep record until $keep_date" $HK_LOG
@@ -76,6 +82,7 @@ main()
     log "[$NAME] Cleanup records" $HK_LOG
     cleanup_record
     pid_clear $PID_FILE
+    exit 0
 }
 
 #

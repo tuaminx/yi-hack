@@ -7,7 +7,8 @@ FTP_MEM_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp_upload.mem"
 FTP_LOG="/tmp/hd1/test/scripts/ftp_upload/log.txt"
 PID_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp.pid"
 
-FTP_ADD=$(get_config FTP_HOST)
+FTP_ADD=$(get_config FTP_HOST $FTP_CFG)
+FTP_CFG="/tmp/hd1/test/scripts/ftp_upload/ftp_upload.cfg"
 
 mem_store()
 {
@@ -43,21 +44,21 @@ mem_get()
     if [ -z "${last_folder}" ] || [ -z "${last_file}" ]; then
         log "[$NAME] Cannot find last folder and file in $mfile" ${FTP_LOG}
         log "[$NAME] The file should content as: 2016Y08M01D13HD23M00S.mp4FPTR" ${FTP_LOG}
-        exit 1
+        exit 0
     fi
 }
 
 ftp_mkd()
 {
     (sleep 1;
-     echo "USER $(get_config FTP_USER)";
+     echo "USER $(get_config FTP_USER $FTP_CFG)";
      sleep 1;
-     echo "PASS $(get_config FTP_PASS)";
+     echo "PASS $(get_config FTP_PASS $FTP_CFG)";
      sleep 1;
-     echo "MKD $(get_config FTP_DIR)/$1";
+     echo "MKD $(get_config FTP_DIR $FTP_CFG)/$1";
      sleep 1;
      echo "QUIT";
-     sleep 1 ) | telnet $FTP_ADD $(get_config FTP_PORT) >> $FTP_LOG 2>&1
+     sleep 1 ) | telnet $FTP_ADD $(get_config FTP_PORT $FTP_CFG) >> $FTP_LOG 2>&1
 }
 
 ftp_upload()
@@ -79,12 +80,12 @@ main()
 
     # Here we goooooo!
     
-    # If FTP server is unreachable here, just exit 1
+    # If FTP server is unreachable here, just exit
     is_server_live $FTP_ADD
     if [ $? -ne 0 ]; then
         log "[$NAME] $FTP_ADD is unreachable!!!" ${FTP_LOG}
         pid_clear $PID_FILE
-        exit 1
+        exit 0
     fi
     log "[$NAME] $FTP_ADD is reachable" ${FTP_LOG}
 
@@ -161,7 +162,7 @@ main()
                             kill -9 "$last_ftppid"
                             mem_retry_next ${FTP_MEM_FILE}
                             pid_clear $PID_FILE
-                            exit 1
+                            exit 0
                         fi
                     fi
                 fi
@@ -174,8 +175,8 @@ main()
                 
                 if eval $comm ; then
                     log "[$NAME] Uploading ${last_folder}/${file}" ${FTP_LOG}
-                    ftpput -u $(get_config FTP_USER) -p $(get_config FTP_PASS) -P $(get_config FTP_PORT) \
-                           ${FTP_ADD} $(get_config FTP_DIR)/${last_folder}/${file} \
+                    ftpput -u $(get_config FTP_USER $FTP_CFG) -p $(get_config FTP_PASS $FTP_CFG) -P $(get_config FTP_PORT $FTP_CFG) \
+                           ${FTP_ADD} $(get_config FTP_DIR $FTP_CFG)/${last_folder}/${file} \
                            ${DEFAULT_RECORD_DIR}/${last_folder}/${file} >> $FTP_LOG 2>&1 &
                     upload_res=$?
                     last_ftppid=$!
@@ -184,7 +185,7 @@ main()
                         log "[$NAME] FAILED" ${FTP_LOG}
                         [ -n "$last_ftppid" ] && kill -9 $last_ftppid
                         pid_clear ${PID_FILE}
-                        exit 1
+                        exit 0
                     fi
                     mem_store "$FTP_MEM_FILE" "$last_folder" "$file" "$last_ftppid" "$last_ftptime"
                     last_file=$file
