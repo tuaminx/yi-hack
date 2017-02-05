@@ -7,28 +7,42 @@ FTP_MEM_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp_upload.mem"
 FTP_LOG="/tmp/hd1/test/scripts/ftp_upload/log.txt"
 PID_FILE="/tmp/hd1/test/scripts/ftp_upload/ftp.pid"
 
+FTP_ADD=$(get_config FTP_HOST)
 
 mem_store()
 {
-    if [ ! -r "$3" ]; then
-        log "[$(basename "$0")] Mem file $3 not existed" ${FTP_LOG}
-    fi
-    last_folder=$1
-    last_file=$2
-    echo "${last_folder}/${last_file}" > $3
+    echo "${2}D${3}F${4}P${5}T${6}R" > $1
+}
+
+mem_retry_next()
+{
+    tmp_data=$(cat "$1")
+    tmp_data="${tmp_data}trueR"
+    echo "$tmp_data" > $1
 }
 
 mem_get()
-{
-    if [ ! -r "$1" ]; then
-        log "[$(basename "$0")] Mem file $1 not existed" ${FTP_LOG}
-    fi
+{    
     mfile=$1
-    last_folder=$(cat ${mfile} | cut -d'/' -f1)
-    last_file=$(cat ${mfile} | cut -d'/' -f2)
+    data=$(cat "$mfile")
+    
+    last_folder=${data%%D*}
+    data=${data##*D}
+    
+    last_file=${data%%F*}
+    data=${data##*F}
+    
+    last_ftppid=${data%%P*}
+    data=${data##*P}
+    
+    last_ftptime=${data%%T*}
+    data=${data##*T}
+    
+    last_retry=${data%%R*}
+    
     if [ -z "${last_folder}" ] || [ -z "${last_file}" ]; then
-        log "[$(basename "$0")] Cannot find last folder and file in $mfile" ${FTP_LOG}
-        log "[$(basename "$0")] The file should content as: 2016Y08M01D13H/23M00S.mp4" ${FTP_LOG}
+        log "[$NAME] Cannot find last folder and file in $mfile" ${FTP_LOG}
+        log "[$NAME] The file should content as: 2016Y08M01D13HD23M00S.mp4FPTR" ${FTP_LOG}
         exit 1
     fi
 }
@@ -43,15 +57,14 @@ ftp_mkd()
      echo "MKD $(get_config FTP_DIR)/$1";
      sleep 1;
      echo "QUIT";
-     sleep 1 ) | telnet $(get_config FTP_HOST) $(get_config FTP_PORT) >> $FTP_LOG 2>&1
+     sleep 1 ) | telnet $FTP_ADD $(get_config FTP_PORT) >> $FTP_LOG 2>&1
 }
 
 ftp_upload()
 {
     from_f=$1
     to_f=$2
-    ftpput -u $(get_config FTP_USER) -p $(get_config FTP_PASS) -P $(get_config FTP_PORT) \
-              $(get_config FTP_HOST) $(get_config FTP_DIR)/${to_f} ${from_f} >> $FTP_LOG 2>&1
+    
     return $?
 }
 
@@ -60,31 +73,46 @@ main()
 {
     last_folder=""
     last_file=""
+    last_ftppid=""
+    last_ftptime=""
+    last_retry=""
 
     # Here we goooooo!
-    is_server_live $(get_config FTP_HOST)
+    
+    # If FTP server is unreachable here, just exit 1
+    is_server_live $FTP_ADD
     if [ $? -ne 0 ]; then
-        log "[$NAME] $(get_config FTP_HOST) is unreachable!!!" ${FTP_LOG}
+        log "[$NAME] $FTP_ADD is unreachable!!!" ${FTP_LOG}
         pid_clear $PID_FILE
         exit 1
     fi
-    log "[$NAME] $(get_config FTP_HOST) is reachable" ${FTP_LOG}
+    log "[$NAME] $FTP_ADD is reachable" ${FTP_LOG}
 
+    # Get last copied file
     mem_get $FTP_MEM_FILE
     log "[$NAME] last folder: $last_folder last file: $last_file" ${FTP_LOG}
+    log "[$NAME] last ftp: $last_ftppid last ftp time: $last_ftptime" ${FTP_LOG}
+    log "[$NAME] retry last: $last_retry" ${FTP_LOG}
 
-    last_y=$(echo $last_folder | cut -d'Y' -f1)
-    last_m=$(echo $last_folder | cut -d'M' -f1 | cut -d'Y' -f2)
-    last_d=$(echo $last_folder | cut -d'D' -f1 | cut -d'M' -f2)
-    last_h=$(echo $last_folder | cut -d'H' -f1 | cut -d'D' -f2)
-    last_i=$(echo $last_file | cut -d'M' -f1)
-    last_s=$(echo $last_file | cut -d'S' -f1 | cut -d'M' -f2)
-
-    now_h=$(date +"%H")
-    now_m=$(date +"%m")
-    now_d=$(date +"%d")
-    now_y=$(date +"%Y")
-
+    # Calculate the datetime info
+    tmp_data=${last_folder}
+    last_y=${tmp_data%%Y*}
+    tmp_data=${tmp_data##*Y}
+    
+    last_m=${tmp_data%%M*}
+    tmp_data=${tmp_data##*M}
+    
+    last_d=${tmp_data%%D*}
+    tmp_data=${tmp_data##*D}
+    
+    last_h=${tmp_data%%H*}
+    
+    tmp_data=${last_file}
+    last_i=${tmp_data%%M*}
+    tmp_data=${tmp_data##*M}
+    last_s=${tmp_data%%S*}
+    unset tmp_data
+    
     cont_last=1
     is_leap_year last_y
     if [ $? -eq 0 ]; then
@@ -109,25 +137,62 @@ main()
 
             fi
             for file in $list_file; do
-                #log $file
+                # If in offline duration then exit
                 check_offline_duration
-                if [ $(echo $file | grep tmp | wc -l) -gt 0 ]; then
-                    log "[$NAME] Skip tmp file" ${FTP_LOG}
+                [ $? -eq 0 ] || (pid_clear $PID_FILE && exit 0)
+                
+                # If FTP unreachable then exit
+                is_server_live $FTP_ADD
+                [ $? -eq 0 ] || (pid_clear $PID_FILE && exit 0)
+                
+                if [ $(expr index "$file" 't') -gt 0 ]; then
+                    log "[$NAME] Skip tmp file $file" ${FTP_LOG}
                     continue
                 fi
-                this_i=$(echo $file | cut -d'M' -f1)
-                this_s=$(echo $file | cut -d'S' -f1 | cut -d'M' -f2)
-                if [ "${this_i}${this_s}" -gt "${last_i}${last_s}" ]; then
+                
+                # If last_ftppid existed, check its execution time, terminate after 15min
+                # Will set retry_next to reupload on next cron execution
+                if [ -n "$last_ftppid" && -n "$last_ftptime" ]; then
+                    if [ "$(cat /proc/${last_ftppid}/comm 2>/dev/null)" == "ftpput" ]; then
+                        exe_dura=$(($(date '+%s') - $last_ftptime))
+                        log "[$NAME] ftpput pid $last_ftppid executed for $exe_dura sec" ${FTP_LOG}
+                        if [ "$exe_dura" -gt 900 ]; then
+                            log "[$NAME] ftpput pid $last_ftppid executed over 15min. Be killed to exit." ${FTP_LOG}
+                            kill -9 "$last_ftppid"
+                            mem_retry_next ${FTP_MEM_FILE}
+                            pid_clear $PID_FILE
+                            exit 1
+                        fi
+                    fi
+                fi
+                tmp_data=${file##*M}
+                
+                comm="\[ ${file%%M*}${tmp_data%%S*} -gt ${last_i}${last_s} \]"
+                if [ "$last_retry" == "true" ]; then
+                    comm="$comm || \[ ${file%%M*}${tmp_data%%S*} -eq ${last_i}${last_s} \]"
+                fi
+                
+                if eval $comm ; then
                     log "[$NAME] Uploading ${last_folder}/${file}" ${FTP_LOG}
-                    ftp_upload ${DEFAULT_RECORD_DIR}/${last_folder}/${file} ${last_folder}/${file}
+                    ftpput -u $(get_config FTP_USER) -p $(get_config FTP_PASS) -P $(get_config FTP_PORT) \
+                           ${FTP_ADD} $(get_config FTP_DIR)/${last_folder}/${file} \
+                           ${DEFAULT_RECORD_DIR}/${last_folder}/${file} >> $FTP_LOG 2>&1 &
                     upload_res=$?
-                    mem_store ${last_folder} ${file} ${FTP_MEM_FILE}
+                    last_ftppid=$!
+                    last_ftptime=$(date '+%s')
                     if [ $upload_res -ne 0 ]; then
                         log "[$NAME] FAILED" ${FTP_LOG}
+                        [ -n "$last_ftppid" ] && kill -9 $last_ftppid
+                        pid_clear ${PID_FILE}
                         exit 1
                     fi
+                    mem_store "$FTP_MEM_FILE" "$last_folder" "$file" "$last_ftppid" "$last_ftptime"
                     last_file=$file
+                    
+                    # Sleep 45s to expect that ftpput will finish its work
+                    sleep 45
                 fi
+                
             done
         fi
         # If last_h between 01 to 09 then remove leading 0 for calculation
@@ -160,7 +225,7 @@ main()
                 max_d02=28
             fi
         fi
-        if [ "${last_y}${last_m}${last_d}${last_h}" -gt "${now_y}${now_m}${now_d}${now_h}" ]; then
+        if [ "${last_y}${last_m}${last_d}${last_h}" -gt "$(date '+%Y%m%d%H')" ]; then
             # Nothing more to do, break the loop
             break
         fi
@@ -177,9 +242,9 @@ main()
 # Check offline duration at beginning
 check_offline_duration
 
-is_server_live $(get_config FTP_HOST)
+is_server_live $FTP_ADD
 if [ $? -ne 0 ]; then
-    log "[$NAME] Unreach FTP server $(get_config FTP_HOST)" ${FTP_LOG}
+    log "[$NAME] Unreach FTP server $FTP_ADD" ${FTP_LOG}
     exit 0
 fi
 
@@ -187,7 +252,7 @@ fi
 last_pid=$(pid_get $PID_FILE)
 
 if [ -n "$last_pid" ]; then
-    is_pid_exist "$last_pid.*ftp_upload"
+    is_pid_exist "$last_pid.*ftp_upload" "ftp_upload.sh"
     if [ $? -eq 0 ]; then
         exit 0
     else

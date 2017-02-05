@@ -85,7 +85,7 @@ main()
 last_pid=$(pid_get $PID_FILE)
 
 if [ -n "$last_pid" ]; then
-    is_pid_exist "$last_pid.*ftp_upload"
+    is_pid_exist "$last_pid.*ftp_upload" "housekeeper.sh"
     if [ $? -eq 0 ]; then
         exit 0
     else
